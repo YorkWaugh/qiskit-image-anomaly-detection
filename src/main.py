@@ -25,7 +25,7 @@ def main():
     # Specify UCSDped1 or UCSDped2
     ucsd_dataset_name = "UCSDped1"
     # Number of normal frames from training set for profile learning
-    num_train_normal_samples = 2000
+    num_train_normal_samples = 200
     # Number of normal frames from test set for evaluation
     num_eval_test_normal_samples = 20
     # Number of anomaly frames from test set for evaluation
@@ -91,10 +91,6 @@ def main():
         f"Profile normal frames (train set) shape: {profile_train_normal_images.shape}, Device: {profile_train_normal_images.device}"
     )
     if profile_train_normal_images.shape[0] > 0:
-        # visualize_data(
-        #     profile_train_normal_images[0].cpu().numpy(),
-        #     title=f"Example Profile Normal Frame (Train Set, {ucsd_dataset_name}, {img_size_for_encoding})",
-        # )
         pass
 
     print(
@@ -113,10 +109,6 @@ def main():
         f"Evaluation normal frames (test set) shape: {eval_test_normal_images.shape}, Device: {eval_test_normal_images.device}"
     )
     if eval_test_normal_images.shape[0] > 0:
-        # visualize_data(
-        #     eval_test_normal_images[0].cpu().numpy(),
-        #     title=f"Example Evaluation Normal Frame (Test Set, {ucsd_dataset_name}, {img_size_for_encoding})",
-        # )
         pass
 
     print(
@@ -137,10 +129,6 @@ def main():
         f"Evaluation anomaly frames (test set) shape: {eval_test_anomaly_images.shape}, Device: {eval_test_anomaly_images.device}"
     )
     if eval_test_anomaly_images.shape[0] > 0:
-        # visualize_data(
-        #     eval_test_anomaly_images[0].cpu().numpy(),
-        #     title=f"Example Evaluation Anomaly Frame (Test Set, {ucsd_dataset_name}, {img_size_for_encoding})",
-        # )
         pass
 
     all_images_to_process_list = []
@@ -185,12 +173,9 @@ def main():
 
     # --- 2. Initialize Quantum Components ---
     print(f"\n--- Step 2: Initializing Quantum Components ---")
-    # ImageEncoder calculates num_qubits internally from image_size_for_encoding
     encoder = ImageEncoder(image_size=img_size_for_encoding, device=device)
     qad = QuantumAnomalyDetection(num_qubits=num_qubits_needed, shots=shots)
-    classical_postprocessor = ClassicalPostprocessor(
-        k_std_dev=2.5, fallback_threshold=0.05
-    )
+    classical_postprocessor = ClassicalPostprocessor(random_state=42)
 
     # --- 3. Learn Normal Profile ---
     print(f"\n--- Step 3: Learning Normal Profile ---")
@@ -209,29 +194,6 @@ def main():
         )
         qad.learn_normal_profile(encoded_profile_circuits)
         print("Normal profile learned.")
-
-        # Fit the classical postprocessor with scores from the normal training samples
-        if qad.normal_profile and profile_train_normal_images.shape[0] > 0:
-            print(
-                "Calculating anomaly scores for normal training samples to fit classical postprocessor..."
-            )
-            profile_normal_scores = []
-            for encoded_qc_profile_sample in tqdm(
-                encoded_profile_circuits,
-                desc="Scoring Normal Training Samples for Postprocessor Fit",
-            ):
-                qc_to_run = encoded_qc_profile_sample.copy()
-                measurable_qc = qad.create_feature_map_circuit(qc_to_run)
-                counts = qad.run_quantum_circuit(measurable_qc)
-                score = qad.analyze_results(counts)
-                profile_normal_scores.append(score)
-
-            classical_postprocessor.fit(profile_normal_scores)
-        else:
-            print(
-                "Skipping fitting of classical postprocessor due to no normal profile or no training images."
-            )
-            classical_postprocessor.fit([])
 
     else:
         print(
@@ -269,10 +231,7 @@ def main():
                 img_data_tensor_device = img_data_tensor.to(device)
                 encoded_qc = encoder.amplitude_encode(img_data_tensor_device.flatten())
 
-                # Pass the already prepared circuit from the encoder to QAD
-                full_qc = qad.create_feature_map_circuit(
-                    encoded_qc
-                )  # This will add measurements
+                full_qc = qad.create_feature_map_circuit(encoded_qc)
                 counts = qad.run_quantum_circuit(full_qc)
                 anomaly_score = qad.analyze_results(counts)
                 all_anomaly_scores.append(anomaly_score)
@@ -287,16 +246,73 @@ def main():
                 )
                 continue
 
+    print("\n--- Fitting Classifier with Evaluation Data ---")
+    valid_scores_for_fitting_indices = [
+        idx for idx, score in enumerate(all_anomaly_scores) if score >= 0
+    ]
+
+    if valid_scores_for_fitting_indices:
+        scores_for_fitting_list = [
+            all_anomaly_scores[idx] for idx in valid_scores_for_fitting_indices
+        ]
+        scores_for_fitting = np.array(scores_for_fitting_list)
+
+        labels_for_fitting_tensor = ground_truth_numeric_labels[
+            torch.tensor(
+                valid_scores_for_fitting_indices,
+                device=ground_truth_numeric_labels.device,
+            )
+        ]
+        labels_for_fitting = labels_for_fitting_tensor.cpu().numpy()
+
+        if len(scores_for_fitting) > 0 and len(np.unique(labels_for_fitting)) >= 2:
+            classical_postprocessor.fit(scores_for_fitting, labels_for_fitting)
+        elif len(scores_for_fitting) == 0:
+            print(
+                "Warning: No valid scores from evaluation set to fit the classifier. Skipping fitting."
+            )
+        else:
+            print(
+                f"Warning: Not enough classes ({len(np.unique(labels_for_fitting))}) in the evaluation data (with valid scores) to fit the classifier. Unique labels found: {np.unique(labels_for_fitting)}. Skipping fitting."
+            )
+    else:
+        print(
+            "Warning: No valid scores available from evaluation set to fit the classifier. Skipping fitting."
+        )
+
     # --- 5. Classical Post-processing ---
     print("\n--- Step 5: Classical Post-processing of Anomaly Scores ---")
-    threshold_info = classical_postprocessor.get_threshold_info()
+    classifier_info = classical_postprocessor.get_classifier_info()
     print(
-        f"Classical Postprocessor Threshold Info: Type={threshold_info['type']}, Value={threshold_info['value']:.4f}"
+        f"Classical Postprocessor Info: Type={classifier_info['type']}, Model={classifier_info['model']}"
     )
-    if threshold_info["type"] == "learned":
-        print(
-            f"  (Learned from Mean={threshold_info.get('mean_normal_score', 'N/A'):.4f}, StdDev={threshold_info.get('std_normal_score', 'N/A'):.4f}, k={threshold_info.get('k_std_dev', 'N/A')})"
+    if classifier_info["type"] == "classifier":
+        mean_val = classifier_info.get("scaler_mean", ["N/A"])
+        mean_val = (
+            mean_val[0]
+            if isinstance(mean_val, np.ndarray) and len(mean_val) > 0
+            else mean_val
         )
+        scale_val = classifier_info.get("scaler_scale", ["N/A"])
+        scale_val = (
+            scale_val[0]
+            if isinstance(scale_val, np.ndarray) and len(scale_val) > 0
+            else scale_val
+        )
+
+        mean_str = (
+            f"{mean_val:.4f}"
+            if isinstance(mean_val, (float, np.floating))
+            else str(mean_val)
+        )
+        scale_str = (
+            f"{scale_val:.4f}"
+            if isinstance(scale_val, (float, np.floating))
+            else str(scale_val)
+        )
+        print(f"  (Scaler: Mean={mean_str}, Scale={scale_str})")
+    elif classifier_info["type"] == "unfitted":
+        print("  (Classifier has not been fitted)")
 
     os.makedirs(result_base_dir, exist_ok=True)
     detected_true_dir = os.path.join(
@@ -404,17 +420,38 @@ def main():
         f"  Number of Qubits: {num_qubits_needed}",
         f"  Shots per Circuit: {shots}",
     ]
-    threshold_info_summary = classical_postprocessor.get_threshold_info()
-    threshold_log_str = f"  Anomaly Threshold Info: Type={threshold_info_summary['type']}, Value={threshold_info_summary['value']:.4f}"
-    if threshold_info_summary["type"] == "learned":
-        mean_val = threshold_info_summary.get("mean_normal_score")
-        std_val = threshold_info_summary.get("std_normal_score")
-        k_val = threshold_info_summary.get("k_std_dev")
-        mean_str = f"{mean_val:.4f}" if mean_val is not None else "N/A"
-        std_str = f"{std_val:.4f}" if std_val is not None else "N/A"
-        k_str = str(k_val) if k_val is not None else "N/A"
-        threshold_log_str += f" (Learned: Mean={mean_str}, StdDev={std_str}, k={k_str})"
-    config_summary.append(threshold_log_str + "\n")
+    classifier_info_summary = classical_postprocessor.get_classifier_info()
+    classifier_log_str = f"  Classifier Info: Type={classifier_info_summary['type']}, Model={classifier_info_summary['model']}"
+    if classifier_info_summary["type"] == "classifier":
+        mean_val_sum = classifier_info_summary.get("scaler_mean", ["N/A"])
+        mean_val_sum = (
+            mean_val_sum[0]
+            if isinstance(mean_val_sum, np.ndarray) and len(mean_val_sum) > 0
+            else mean_val_sum
+        )
+        scale_val_sum = classifier_info_summary.get("scaler_scale", ["N/A"])
+        scale_val_sum = (
+            scale_val_sum[0]
+            if isinstance(scale_val_sum, np.ndarray) and len(scale_val_sum) > 0
+            else scale_val_sum
+        )
+
+        mean_str_sum = (
+            f"{mean_val_sum:.4f}"
+            if isinstance(mean_val_sum, (float, np.floating))
+            else str(mean_val_sum)
+        )
+        scale_str_sum = (
+            f"{scale_val_sum:.4f}"
+            if isinstance(scale_val_sum, (float, np.floating))
+            else str(scale_val_sum)
+        )
+        classifier_log_str += (
+            f" (Scaler Mean={mean_str_sum}, Scaler Scale={scale_str_sum})"
+        )
+    elif classifier_info_summary["type"] == "unfitted":
+        classifier_log_str += " (Classifier has not been fitted)"
+    config_summary.append(classifier_log_str + "\n")
 
     config_summary.append(f"Evaluation Set Composition (Selected for Processing):")
     for label, count in zip(unique_str_labels, counts_str_labels):

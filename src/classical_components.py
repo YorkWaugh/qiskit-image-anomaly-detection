@@ -1,90 +1,130 @@
 import numpy as np
+from sklearn.svm import SVC
+from sklearn.preprocessing import StandardScaler
+from sklearn.exceptions import NotFittedError
 
 
 class ClassicalPostprocessor:
-    """Handles classical post-processing of anomaly scores.
-    Currently, this involves applying a threshold to determine anomalies.
-    """
+    """Handles classical post-processing of anomaly scores using a classifier."""
 
-    def __init__(self, k_std_dev=2.5, fallback_threshold=0.1):
-        self.k_std_dev = k_std_dev
-        self.fallback_threshold = fallback_threshold
-        self.learned_threshold = None
-        self.mean_normal_score_ = None
-        self.std_normal_score_ = None
-        print(
-            f"ClassicalPostprocessor initialized with k_std_dev={k_std_dev}, fallback_threshold={fallback_threshold}"
+    def __init__(self, random_state=42):
+        self.classifier = SVC(
+            random_state=random_state, class_weight="balanced", probability=True
         )
+        self.scaler = StandardScaler()
+        self.is_fitted = False
+        print(f"ClassicalPostprocessor initialized with SVC.")
 
-    def fit(self, normal_scores):
-        if normal_scores is None or len(normal_scores) == 0:
+    def fit(self, scores, labels):
+        """
+        Fits the classifier using the provided scores and labels.
+        Scores: array-like, shape (n_samples,)
+        Labels: array-like, shape (n_samples,), 0 for normal, 1 for anomaly
+        """
+        if scores is None or len(scores) == 0:
             print(
-                "Warning: No normal scores provided to ClassicalPostprocessor.fit(). Will use fallback threshold."
+                "Warning: No scores provided to ClassicalPostprocessor.fit(). Classifier not fitted."
             )
-            self.learned_threshold = None  # Explicitly mark as not learned
-            self.mean_normal_score_ = None
-            self.std_normal_score_ = None
+            self.is_fitted = False
             return
 
-        normal_scores_np = np.array(normal_scores)
-        if not np.all(np.isfinite(normal_scores_np)):
+        if labels is None or len(labels) == 0:
             print(
-                "Warning: Non-finite values (NaN or Inf) found in normal_scores. Will use fallback threshold."
+                "Warning: No labels provided to ClassicalPostprocessor.fit(). Classifier not fitted."
             )
-            self.learned_threshold = None
-            self.mean_normal_score_ = None
-            self.std_normal_score_ = None
+            self.is_fitted = False
             return
 
-        mean_score = np.mean(normal_scores_np)
-        std_score = np.std(normal_scores_np)
+        if len(scores) != len(labels):
+            print(
+                "Warning: Mismatch between number of scores and labels. Classifier not fitted."
+            )
+            self.is_fitted = False
+            return
 
-        self.mean_normal_score_ = mean_score
-        self.std_normal_score_ = std_score
+        scores_np = np.array(scores).reshape(-1, 1)  # Reshape for scaler and classifier
+        labels_np = np.array(labels)
 
-        if std_score < 1e-6:  # Effectively zero or very small std dev
+        if not np.all(np.isfinite(scores_np)):
             print(
-                f"Warning: Standard deviation of normal scores is very small ({std_score:.4f})."
+                "Warning: Non-finite values (NaN or Inf) found in scores. Classifier not fitted."
             )
-            # Threshold slightly above the mean if all normal scores are almost identical.
-            self.learned_threshold = mean_score + 1e-5
+            self.is_fitted = False
+            return
+
+        if len(np.unique(labels_np)) < 2:
             print(
-                f"ClassicalPostprocessor: Learned threshold set to mean + epsilon = {self.learned_threshold:.4f}"
+                f"Warning: Only one class present in labels: {np.unique(labels_np)}. Classifier requires at least two classes. Model not fitted."
             )
-        else:
-            self.learned_threshold = mean_score + self.k_std_dev * std_score
-            print(
-                f"ClassicalPostprocessor: Learned threshold = {self.learned_threshold:.4f} (mean={mean_score:.4f}, std={std_score:.4f}, k={self.k_std_dev})"
-            )
+            self.is_fitted = False
+            return
+
+        try:
+            self.scaler.fit(scores_np)
+            scaled_scores = self.scaler.transform(scores_np)
+            self.classifier.fit(scaled_scores, labels_np)
+            self.is_fitted = True
+            print(f"ClassicalPostprocessor: SVC classifier fitted successfully.")
+        except Exception as e:
+            print(f"Error during classifier fitting: {e}")
+            self.is_fitted = False
 
     def process_scores(self, anomaly_scores):
-        active_threshold = self.fallback_threshold
-        threshold_source = "fallback"
-
-        if self.learned_threshold is not None:
-            active_threshold = self.learned_threshold
-            threshold_source = "learned"
-        else:
+        """
+        Predicts labels for the given anomaly scores using the fitted classifier.
+        Returns an array of predicted labels (0 or 1).
+        """
+        if not self.is_fitted:
             print(
-                f"ClassicalPostprocessor: learned_threshold is None. Using fallback_threshold: {self.fallback_threshold}"
+                "Error: Classifier not fitted. Call fit() first. Returning empty predictions."
             )
-
-        print(
-            f"ClassicalPostprocessor: Using {threshold_source} threshold: {active_threshold:.4f}"
-        )
+            print(
+                "Warning: Classifier not fitted. Predicting all as normal (0) as a fallback."
+            )
+            return np.zeros(len(anomaly_scores), dtype=int)
 
         if not isinstance(anomaly_scores, np.ndarray):
             anomaly_scores = np.array(anomaly_scores)
 
-        return anomaly_scores > active_threshold
+        if anomaly_scores.ndim == 1:
+            anomaly_scores_reshaped = anomaly_scores.reshape(-1, 1)
+        else:
+            anomaly_scores_reshaped = anomaly_scores
 
-    def get_threshold_info(self):
-        if self.learned_threshold is not None:
+        if not np.all(np.isfinite(anomaly_scores_reshaped)):
+            print(
+                "Warning: Non-finite values (NaN or Inf) found in anomaly_scores for prediction. Returning empty predictions for these."
+            )
+            predictions = np.zeros(len(anomaly_scores_reshaped), dtype=int)
+            finite_mask = np.all(np.isfinite(anomaly_scores_reshaped), axis=1)
+            if np.any(finite_mask):
+                scaled_scores = self.scaler.transform(
+                    anomaly_scores_reshaped[finite_mask]
+                )
+                predictions[finite_mask] = self.classifier.predict(scaled_scores)
+            return predictions
+
+        try:
+            scaled_scores = self.scaler.transform(anomaly_scores_reshaped)
+            predictions = self.classifier.predict(scaled_scores)
+            print(f"ClassicalPostprocessor: Predictions made using SVC.")
+            return predictions
+        except NotFittedError:
+            print(
+                "Error: Scaler or Classifier not fitted. Call fit() first. Returning empty predictions."
+            )
+            return np.zeros(len(anomaly_scores_reshaped), dtype=int)
+        except Exception as e:
+            print(f"Error during score processing: {e}")
+            return np.zeros(len(anomaly_scores_reshaped), dtype=int)
+
+    def get_classifier_info(self):  # Renamed from get_threshold_info
+        if self.is_fitted:
             return {
-                "type": "learned",
-                "value": self.learned_threshold,
-                "mean_normal_score": self.mean_normal_score_,
-                "std_normal_score": self.std_normal_score_,
-                "k_std_dev": self.k_std_dev,
+                "type": "classifier",
+                "model": self.classifier.__class__.__name__,
+                "params": self.classifier.get_params(),
+                "scaler_mean": self.scaler.mean_,
+                "scaler_scale": self.scaler.scale_,
             }
-        return {"type": "fallback", "value": self.fallback_threshold}
+        return {"type": "unfitted", "model": self.classifier.__class__.__name__}
