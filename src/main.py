@@ -25,7 +25,7 @@ def main():
     # Specify UCSDped1 or UCSDped2
     ucsd_dataset_name = "UCSDped1"
     # Number of normal frames from training set for profile learning
-    num_train_normal_samples = 1000
+    num_train_normal_samples = 2000
     # Number of normal frames from test set for evaluation
     num_eval_test_normal_samples = 20
     # Number of anomaly frames from test set for evaluation
@@ -91,10 +91,11 @@ def main():
         f"Profile normal frames (train set) shape: {profile_train_normal_images.shape}, Device: {profile_train_normal_images.device}"
     )
     if profile_train_normal_images.shape[0] > 0:
-        visualize_data(
-            profile_train_normal_images[0].cpu().numpy(),
-            title=f"Example Profile Normal Frame (Train Set, {ucsd_dataset_name}, {img_size_for_encoding})",
-        )
+        # visualize_data(
+        #     profile_train_normal_images[0].cpu().numpy(),
+        #     title=f"Example Profile Normal Frame (Train Set, {ucsd_dataset_name}, {img_size_for_encoding})",
+        # )
+        pass
 
     print(
         f"Loading {num_eval_test_normal_samples} normal frames from TEST set ({ucsd_dataset_name}) for evaluation."
@@ -112,10 +113,11 @@ def main():
         f"Evaluation normal frames (test set) shape: {eval_test_normal_images.shape}, Device: {eval_test_normal_images.device}"
     )
     if eval_test_normal_images.shape[0] > 0:
-        visualize_data(
-            eval_test_normal_images[0].cpu().numpy(),
-            title=f"Example Evaluation Normal Frame (Test Set, {ucsd_dataset_name}, {img_size_for_encoding})",
-        )
+        # visualize_data(
+        #     eval_test_normal_images[0].cpu().numpy(),
+        #     title=f"Example Evaluation Normal Frame (Test Set, {ucsd_dataset_name}, {img_size_for_encoding})",
+        # )
+        pass
 
     print(
         f"Loading {num_eval_test_anomaly_samples} anomaly frames from TEST set ({ucsd_dataset_name}) for evaluation."
@@ -135,10 +137,11 @@ def main():
         f"Evaluation anomaly frames (test set) shape: {eval_test_anomaly_images.shape}, Device: {eval_test_anomaly_images.device}"
     )
     if eval_test_anomaly_images.shape[0] > 0:
-        visualize_data(
-            eval_test_anomaly_images[0].cpu().numpy(),
-            title=f"Example Evaluation Anomaly Frame (Test Set, {ucsd_dataset_name}, {img_size_for_encoding})",
-        )
+        # visualize_data(
+        #     eval_test_anomaly_images[0].cpu().numpy(),
+        #     title=f"Example Evaluation Anomaly Frame (Test Set, {ucsd_dataset_name}, {img_size_for_encoding})",
+        # )
+        pass
 
     all_images_to_process_list = []
     ground_truth_string_labels_list = []
