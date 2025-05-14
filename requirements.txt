@@ -1,0 +1,10 @@
+imageio
+matplotlib
+numpy
+pillow
+qiskit
+qiskit-aer
+scipy
+torch
+torchvision
+tqdm
