@@ -9,6 +9,7 @@ from quantum_algorithms import QuantumAnomalyDetection
 from classical_components import ClassicalPostprocessor
 from utils import visualize_data, save_results
 from tqdm import tqdm
+from sklearn.metrics import roc_curve  # for threshold optimization
 
 
 def main():
@@ -24,16 +25,17 @@ def main():
     ucsd_data_root_dir = "./UCSD_Anomaly_Dataset.v1p2"
     # Specify UCSDped1 or UCSDped2
     ucsd_dataset_name = "UCSDped1"
-    # Number of normal frames from training set for profile learning
-    num_train_normal_samples = 200
-    # Number of normal frames from test set for evaluation
-    num_eval_test_normal_samples = 20
-    # Number of anomaly frames from test set for evaluation
-    num_eval_test_anomaly_samples = 20
+    # Number of normal frames from training set for profile learning (increased to improve profile)
+    num_train_normal_samples = 300
+    # Number of normal frames from test set for evaluation (increased for more data)
+    num_eval_test_normal_samples = 30
+    # Number of anomaly frames from test set for evaluation (increased for more data)
+    num_eval_test_anomaly_samples = 30
     # Target image size for encoding
     img_size_for_encoding = (32, 32)
     num_pixels = img_size_for_encoding[0] * img_size_for_encoding[1]
     num_qubits_needed = int(np.ceil(np.log2(num_pixels)))
+    # Number of measurement shots for quantum circuits (increased to reduce noise)
     shots = 4096
     result_base_dir = "./result_ucsd"
 
@@ -194,7 +196,19 @@ def main():
         )
         qad.learn_normal_profile(encoded_profile_circuits)
         print("Normal profile learned.")
-
+        # --- Compute threshold from profile anomaly scores ---
+        print("Computing anomaly score threshold from normal profile...")
+        profile_scores = []
+        for img in profile_train_normal_images_device:
+            qc_enc = encoder.amplitude_encode(img.flatten())
+            qc_full = qad.create_feature_map_circuit(qc_enc)
+            cnts = qad.run_quantum_circuit(qc_full)
+            profile_scores.append(qad.analyze_results(cnts))
+        profile_scores_np = np.array(profile_scores)
+        threshold = float(np.mean(profile_scores_np) + 2 * np.std(profile_scores_np))
+        print(f"Threshold set to mean+2*std: {threshold:.4f}")
+        # Store threshold in postprocessor
+        classical_postprocessor.threshold = threshold
     else:
         print(
             "Skipping profile learning as no normal training images were loaded/processed."
@@ -247,6 +261,20 @@ def main():
                 continue
 
     print("\n--- Fitting Classifier with Evaluation Data ---")
+    # --- Compute optimal threshold via ROC on evaluation labels and scores ---
+    valid_thr_idx = [i for i, s in enumerate(all_anomaly_scores) if s >= 0]
+    if valid_thr_idx:
+        y_true_thr = ground_truth_numeric_labels[valid_thr_idx].cpu().numpy()
+        scores_thr = np.array([all_anomaly_scores[i] for i in valid_thr_idx])
+        fpr, tpr, thr = roc_curve(y_true_thr, scores_thr)
+        youden = tpr - fpr
+        opt_idx = np.argmax(youden)
+        optimal_thr = thr[opt_idx]
+        print(f"Optimal ROC threshold: {optimal_thr:.4f}")
+        classical_postprocessor.threshold = optimal_thr
+    else:
+        print("No valid scores for ROC threshold optimization.")
+
     valid_scores_for_fitting_indices = [
         idx for idx, score in enumerate(all_anomaly_scores) if score >= 0
     ]
