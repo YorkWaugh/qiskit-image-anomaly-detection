@@ -9,14 +9,7 @@ import imageio
 
 class DataLoader:
     def __init__(self, root_dir, dataset_name="UCSDped1", device=None):
-        """
-        Initializes the DataLoader.
-        Args:
-            root_dir (str): The root directory where the UCSD dataset is located.
-                           Example: "./UCSD_Anomaly_Dataset.v1p2"
-            dataset_name (str): "UCSDped1" or "UCSDped2".
-            device (torch.device): The device to load tensors onto.
-        """
+        """Initialize DataLoader with root_dir, dataset_name, and device."""
         self.root_dir = root_dir
         self.dataset_name = dataset_name
         self.dataset_path = os.path.join(self.root_dir, self.dataset_name)
@@ -28,12 +21,7 @@ class DataLoader:
         self.device = device if device is not None else torch.device("cpu")
 
     def _parse_gt_mat_file(self):
-        """
-        Parses the .m file containing ground truth frame ranges for anomalous test videos.
-        Returns a dictionary where keys are test folder names (e.g., "Test003")
-        and values are lists of anomalous frame numbers (1-indexed).
-        Returns None if parsing fails or file not found.
-        """
+        """Parse .m GT file for anomalous frame ranges."""
         if not os.path.exists(self.gt_mat_file_path):
             return None
 
@@ -113,9 +101,9 @@ class DataLoader:
             return None
 
     def _load_frames_from_folder(self, folder_path, image_size):
-        """Loads all .tif image frames from a given folder and preprocesses them."""
+        """Load and preprocess .tif frames into a tensor."""
         frames_np_list = []
-        # Ensure folder_path is a string, as Path objects might not be directly usable by glob in all contexts
+        # use string path for glob
         frame_files = sorted(glob.glob(os.path.join(str(folder_path), "*.tif")))
         if not frame_files:
             return torch.empty(
@@ -124,10 +112,10 @@ class DataLoader:
 
         for frame_file in frame_files:
             try:
-                # Use imageio.imread for TIFF files
+                # read TIFF frame
                 img_array_raw = imageio.imread(frame_file)
 
-                # Ensure image is grayscale (L mode equivalent)
+                # convert to grayscale
                 if img_array_raw.ndim == 3 and img_array_raw.shape[2] > 1:
                     if img_array_raw.shape[2] == 3:  # RGB
                         img_array_gray = np.dot(
@@ -147,7 +135,7 @@ class DataLoader:
                     )
                     continue
 
-                # Convert to PIL Image for resizing to maintain consistency with previous logic
+                # resize and normalize
                 img_pil = Image.fromarray(img_array_gray.astype(np.uint8), mode="L")
                 img_resized = img_pil.resize(
                     (image_size[1], image_size[0]), Image.Resampling.LANCZOS
@@ -168,11 +156,7 @@ class DataLoader:
         return frames_tensor
 
     def load_data(self, image_size=(16, 16)):
-        """
-        Loads training and testing frames.
-        Returns: (train_frames, train_labels), (test_frames, test_labels, test_gt_info)
-                 All frames and labels are PyTorch tensors. test_gt_info is a dict.
-        """
+        """Load train/test frames, labels, and GT info."""
         train_frames_list = []
         train_path = os.path.join(self.dataset_path, "Train")
         if os.path.exists(train_path):

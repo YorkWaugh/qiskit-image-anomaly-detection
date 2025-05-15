@@ -8,7 +8,6 @@ from image_encoding import ImageEncoder
 from quantum_algorithms import QuantumAnomalyDetection
 from classical_components import ClassicalPostprocessor
 from utils import visualize_data, save_results
-from tqdm import tqdm
 from sklearn.metrics import roc_curve  # for threshold optimization
 
 
@@ -92,8 +91,6 @@ def main():
     print(
         f"Profile normal frames (train set) shape: {profile_train_normal_images.shape}, Device: {profile_train_normal_images.device}"
     )
-    if profile_train_normal_images.shape[0] > 0:
-        pass
 
     print(
         f"Loading {num_eval_test_normal_samples} normal frames from TEST set ({ucsd_dataset_name}) for evaluation."
@@ -110,8 +107,6 @@ def main():
     print(
         f"Evaluation normal frames (test set) shape: {eval_test_normal_images.shape}, Device: {eval_test_normal_images.device}"
     )
-    if eval_test_normal_images.shape[0] > 0:
-        pass
 
     print(
         f"Loading {num_eval_test_anomaly_samples} anomaly frames from TEST set ({ucsd_dataset_name}) for evaluation."
@@ -130,8 +125,21 @@ def main():
     print(
         f"Evaluation anomaly frames (test set) shape: {eval_test_anomaly_images.shape}, Device: {eval_test_anomaly_images.device}"
     )
-    if eval_test_anomaly_images.shape[0] > 0:
-        pass
+
+    # Visualize samples from the training and test sets
+    # if profile_train_normal_images.shape[0] > 0:
+    #     visualize_data(
+    #         profile_train_normal_images[0].cpu().numpy(),
+    #         title="Training Set - Normal Sample",
+    #     )
+    # if eval_test_normal_images.shape[0] > 0:
+    #     visualize_data(
+    #         eval_test_normal_images[0].cpu().numpy(), title="Test Set - Normal Sample"
+    #     )
+    # if eval_test_anomaly_images.shape[0] > 0:
+    #     visualize_data(
+    #         eval_test_anomaly_images[0].cpu().numpy(), title="Test Set - Anomaly Sample"
+    #     )
 
     all_images_to_process_list = []
     ground_truth_string_labels_list = []
@@ -213,7 +221,6 @@ def main():
         print(
             "Skipping profile learning as no normal training images were loaded/processed."
         )
-        pass
 
     if not qad.normal_profile:
         print(
@@ -406,8 +413,6 @@ def main():
                 print(result_str)
                 detection_results_summary.append(result_str)
                 processed_score_idx += 1
-            else:
-                pass
 
     # --- Calculate and Print Accuracy ---
     accuracy_value_str = "N/A (no successfully processed samples for metrics)"

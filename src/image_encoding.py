@@ -11,7 +11,7 @@ class ImageEncoder:
         self.device = device if device is not None else torch.device("cpu")
 
     def _normalize_image(self, image_tensor: torch.Tensor):
-        """Normalizes the image tensor so that its L2 norm is 1."""
+        """Normalize tensor to unit L2 norm."""
         image_tensor_float64 = image_tensor.to(dtype=torch.float64)
         norm = torch.linalg.norm(image_tensor_float64)
         if norm == 0:
@@ -26,12 +26,7 @@ class ImageEncoder:
         return image_tensor_float64 / norm
 
     def amplitude_encode(self, image_data_tensor: torch.Tensor):
-        """
-        Encodes a grayscale image (as a PyTorch tensor) into a quantum state
-        using amplitude encoding.
-        Assumes image_data_tensor is a 2D (H,W) or 1D (flattened) PyTorch tensor.
-        The length of the flattened tensor can be less than 2^num_qubits, in which case it will be padded.
-        """
+        """Amplitude-encode grayscale tensor with padding and log1p transform."""
         if not isinstance(image_data_tensor, torch.Tensor):
             raise TypeError(
                 f"Input image_data must be a PyTorch tensor. Got {type(image_data_tensor)}"
@@ -62,16 +57,10 @@ class ImageEncoder:
             dtype=torch.float64
         )
 
-        # --- Apply transformation before normalization ---
-        # Apply log1p to pixel values.
-        # This might change the distribution of amplitudes.
-        # Ensure pixel values are non-negative (typically true for images).
+        # apply log1p transform to non-negative pixels
         processed_padded_tensor = torch.log1p(torch.clamp(padded_image_tensor, min=0.0))
-        # --- End transformation ---
 
-        normalized_tensor = self._normalize_image(
-            processed_padded_tensor
-        )  # Pass the processed tensor
+        normalized_tensor = self._normalize_image(processed_padded_tensor)
 
         normalized_vector_np = normalized_tensor.cpu().numpy()
 
@@ -80,11 +69,7 @@ class ImageEncoder:
         return qc
 
     def encode_rgb(self, image_rgb_tensor: torch.Tensor):
-        """
-        Encodes an RGB image (tensor) by first converting it to grayscale.
-        Assumes image_rgb_tensor is a 3D PyTorch tensor (H, W, C) or (C, H, W).
-        The grayscale image is then encoded using amplitude encoding.
-        """
+        """Convert RGB to grayscale and amplitude-encode."""
         if not isinstance(image_rgb_tensor, torch.Tensor):
             raise TypeError("RGB image must be a PyTorch tensor.")
         image_rgb_tensor = image_rgb_tensor.to(self.device)
@@ -122,8 +107,8 @@ class ImageEncoder:
         return self.amplitude_encode(grayscale_image_tensor)
 
     def encode_hsi(self, image_hsi_tensor: torch.Tensor):
-        """Placeholder for HSI encoding. Uses Intensity channel if 3-channel, else treats as grayscale."""
-        print("Warning: HSI encoding using Intensity channel or as grayscale.")
+        """Encode HSI using intensity channel or grayscale."""
+        print("Warning: using HSI intensity channel")
         if not isinstance(image_hsi_tensor, torch.Tensor):
             raise TypeError("HSI image must be a PyTorch tensor.")
         image_hsi_tensor = image_hsi_tensor.to(self.device)
@@ -150,8 +135,8 @@ class ImageEncoder:
             raise ValueError("Unsupported HSI tensor format.")
 
     def encode_lab(self, image_lab_tensor: torch.Tensor):
-        """Placeholder for LAB encoding. Uses L* channel if 3-channel, else treats as grayscale."""
-        print("Warning: LAB encoding using L* channel or as grayscale.")
+        """Encode LAB using L* channel or grayscale."""
+        print("Warning: using LAB lightness channel")
         if not isinstance(image_lab_tensor, torch.Tensor):
             raise TypeError("LAB image must be a PyTorch tensor.")
         image_lab_tensor = image_lab_tensor.to(self.device)

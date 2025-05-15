@@ -4,18 +4,17 @@ from sklearn.model_selection import GridSearchCV
 
 
 class ClassicalPostprocessor:
-    """Classical post-processor using RandomForest."""
+    """RandomForest-based postprocessor."""
 
     def __init__(self, random_state=42):
-        # Initialize RandomForest classifier
+        # init classifier
         self.classifier = RandomForestClassifier(
             random_state=random_state, class_weight="balanced"
         )
         self.is_fitted = False
-        # Initialization complete
 
     def fit(self, scores, labels):
-        """Fit RandomForest on anomaly scores and labels."""
+        """Train classifier on score-label pairs."""
         if scores is None or len(scores) == 0:
             self.is_fitted = False
             return
@@ -40,7 +39,7 @@ class ClassicalPostprocessor:
             return
 
         try:
-            # Hyperparameter tuning via grid search
+            # grid search for best params
             param_grid = {"n_estimators": [100, 200], "max_depth": [None, 5, 10]}
             grid = GridSearchCV(
                 estimator=self.classifier,
@@ -51,12 +50,11 @@ class ClassicalPostprocessor:
             grid.fit(scores_np, labels_np)
             self.classifier = grid.best_estimator_
             self.is_fitted = True
-            # Model fitted
         except Exception:
             self.is_fitted = False
 
     def process_scores(self, anomaly_scores):
-        """Predict anomaly labels from scores."""
+        """Predict labels from scores."""
         if not self.is_fitted:
             return np.zeros(len(anomaly_scores), dtype=int)
 
@@ -77,13 +75,14 @@ class ClassicalPostprocessor:
             return predictions
 
         try:
-            # Predict labels
+            # predict
             predictions = self.classifier.predict(anomaly_scores_reshaped)
             return predictions
         except Exception:
             return np.zeros(len(anomaly_scores_reshaped), dtype=int)
 
     def get_classifier_info(self):
+        """Return model info or unfitted status."""
         if self.is_fitted:
             return {
                 "type": "classifier",

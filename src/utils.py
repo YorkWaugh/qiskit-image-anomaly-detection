@@ -1,13 +1,8 @@
-import numpy as np  # Import numpy at the module level
+import numpy as np
 
 
 def save_results(results, filename):
-    """Saves a list of strings to a text file, with each string on a new line.
-
-    Args:
-        results (list[str]): A list of strings to be saved.
-        filename (str): The name of the file to save the results to.
-    """
+    """Save list of strings to a file."""
     try:
         with open(filename, "w") as f:
             for result in results:
@@ -18,13 +13,8 @@ def save_results(results, filename):
 
 
 def visualize_data(image_array, title="Image"):
-    """Displays a single 2D numpy array as a grayscale image using matplotlib.
-
-    Args:
-        image_array (np.ndarray): The 2D numpy array representing the image.
-        title (str, optional): The title for the image plot. Defaults to "Image".
-    """
-    import matplotlib.pyplot as plt  # Import here to make matplotlib optional at module level
+    """Show 2D numpy array as grayscale image."""
+    import matplotlib.pyplot as plt
 
     if not isinstance(image_array, np.ndarray):
         print(f"Cannot visualize. Expected a numpy array, but got {type(image_array)}.")
