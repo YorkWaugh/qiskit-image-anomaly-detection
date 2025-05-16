@@ -1,6 +1,7 @@
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import GridSearchCV
+from sklearn.preprocessing import StandardScaler
 
 
 class ClassicalPostprocessor:
@@ -12,6 +13,10 @@ class ClassicalPostprocessor:
             random_state=random_state, class_weight="balanced"
         )
         self.is_fitted = False
+        # init scaler for score normalization
+        self.scaler = StandardScaler()
+        self.scaler_mean_ = None
+        self.scaler_scale_ = None
 
     def fit(self, scores, labels):
         """Train classifier on score-label pairs."""
@@ -28,6 +33,11 @@ class ClassicalPostprocessor:
             return
 
         scores_np = np.array(scores).reshape(-1, 1)
+        # fit scaler and normalize scores
+        self.scaler.fit(scores_np)
+        self.scaler_mean_ = self.scaler.mean_.tolist()
+        self.scaler_scale_ = self.scaler.scale_.tolist()
+        scores_scaled = self.scaler.transform(scores_np)
         labels_np = np.array(labels)
 
         if not np.all(np.isfinite(scores_np)):
@@ -47,7 +57,7 @@ class ClassicalPostprocessor:
                 cv=3,
                 scoring="accuracy",
             )
-            grid.fit(scores_np, labels_np)
+            grid.fit(scores_scaled, labels_np)
             self.classifier = grid.best_estimator_
             self.is_fitted = True
         except Exception:
@@ -65,6 +75,8 @@ class ClassicalPostprocessor:
             anomaly_scores_reshaped = anomaly_scores.reshape(-1, 1)
         else:
             anomaly_scores_reshaped = anomaly_scores
+        # scale scores for prediction
+        anomaly_scores_scaled = self.scaler.transform(anomaly_scores_reshaped)
 
         if not np.all(np.isfinite(anomaly_scores_reshaped)):
             predictions = np.zeros(len(anomaly_scores_reshaped), dtype=int)
@@ -76,7 +88,7 @@ class ClassicalPostprocessor:
 
         try:
             # predict
-            predictions = self.classifier.predict(anomaly_scores_reshaped)
+            predictions = self.classifier.predict(anomaly_scores_scaled)
             return predictions
         except Exception:
             return np.zeros(len(anomaly_scores_reshaped), dtype=int)
@@ -88,5 +100,7 @@ class ClassicalPostprocessor:
                 "type": "classifier",
                 "model": self.classifier.__class__.__name__,
                 "params": self.classifier.get_params(),
+                "scaler_mean": self.scaler_mean_,
+                "scaler_scale": self.scaler_scale_,
             }
         return {"type": "unfitted", "model": self.classifier.__class__.__name__}
