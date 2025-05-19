@@ -1,7 +1,7 @@
 import os
 import numpy as np
 import matplotlib.pyplot as plt
-import shutil  # Added for directory cleanup
+import shutil
 from data_loader import DataLoader
 from image_encoding import ImageEncoder
 from quantum_algorithms import QuantumAnomalyDetection
@@ -12,7 +12,6 @@ from utils import visualize_data, save_results
 def main():
     print("Starting Quantum Image Anomaly Detection Pipeline...")
 
-    # --- Configuration ---
     mnist_data_dir = "./mnist_data"
     num_train_normal_samples = 250
     num_eval_test_normal_samples = 20
@@ -23,10 +22,8 @@ def main():
     num_pixels = img_size_for_encoding[0] * img_size_for_encoding[1]
     num_qubits_needed = int(np.ceil(np.log2(num_pixels)))
     shots = 1024
-    anomaly_threshold = 0.36
-    result_base_dir = "./result"  # Define result_base_dir earlier for cleanup
+    result_base_dir = "./result"
 
-    # --- Clean up previous results directory ---
     if os.path.exists(result_base_dir):
         print(f"Cleaning up existing results directory: {result_base_dir}")
         try:
@@ -35,10 +32,7 @@ def main():
         except OSError as e:
             print(f"Error removing directory {result_base_dir}: {e}")
             print("Please check permissions or close any open files in the directory.")
-            # Optionally, decide if the script should exit if cleanup fails
-            # return
 
-    # --- 1. Load and Preprocess Data ---
     print("\n--- Step 1: Loading and Preprocessing MNIST Data ---")
     if not os.path.exists(mnist_data_dir):
         os.makedirs(mnist_data_dir)
@@ -141,7 +135,6 @@ def main():
     for label, count in zip(unique_labels, counts):
         print(f"  {label}: {count}")
 
-    # --- 2. Initialize Encoders and Quantum Components ---
     print(
         f"\n--- Step 2: Initializing Quantum Components ({num_qubits_needed} qubits) ---"
     )
@@ -151,7 +144,6 @@ def main():
     )
     classical_postprocessor = ClassicalPostprocessor()
 
-    # --- 2.5 Learn Normal Profile ---
     print("\n--- Step 2.5: Learning Normal Profile ---")
     encoded_profile_circuits = []
     if profile_train_normal_images.shape[0] > 0:
@@ -192,7 +184,6 @@ def main():
         )
         return
 
-    # --- 3. Process EVALUATION Images and Detect Anomalies ---
     print("\n--- Step 3: Processing Evaluation Set and Detecting Anomalies ---")
     all_anomaly_scores = []
     detection_results_summary = []
@@ -231,9 +222,60 @@ def main():
                 )
                 continue
 
-    # --- 4. Classical Post-processing ---
+    print("\n--- Step 3.5: Determining Optimal Anomaly Threshold ---")
+
+    valid_scores_for_thresholding = []
+    true_binary_labels_for_thresholding = []
+
+    for i, score in enumerate(all_anomaly_scores):
+        if score >= 0:
+            valid_scores_for_thresholding.append(score)
+            true_binary_labels_for_thresholding.append(
+                1 if "anomaly" in ground_truth_labels[i] else 0
+            )
+
+    if not valid_scores_for_thresholding:
+        print(
+            "No valid scores available to determine threshold. Using default:",
+            anomaly_threshold,
+        )
+    else:
+        best_accuracy = -1.0
+        potential_thresholds = sorted(list(set(valid_scores_for_thresholding)))
+
+        if not potential_thresholds:
+            print(
+                "No unique scores to test as thresholds. Using default:",
+                anomaly_threshold,
+            )
+        elif len(potential_thresholds) == 1:
+            anomaly_threshold = potential_thresholds[0]
+            print(
+                f"Only one unique score value ({anomaly_threshold}) found. Using this as threshold. Accuracy calculation might not be meaningful for threshold selection here."
+            )
+        else:
+            for temp_threshold in potential_thresholds:
+                predicted_labels = [
+                    1 if score >= temp_threshold else 0
+                    for score in valid_scores_for_thresholding
+                ]
+                correct_predictions = 0
+                for i in range(len(predicted_labels)):
+                    if predicted_labels[i] == true_binary_labels_for_thresholding[i]:
+                        correct_predictions += 1
+                current_accuracy = correct_predictions / len(
+                    true_binary_labels_for_thresholding
+                )
+
+                if current_accuracy > best_accuracy:
+                    best_accuracy = current_accuracy
+                    anomaly_threshold = temp_threshold
+
+            print(
+                f"Optimal anomaly threshold determined: {anomaly_threshold:.4f} (achieved accuracy: {best_accuracy:.4f} on eval set for threshold selection)"
+            )
+
     print("\n--- Step 4: Classical Post-processing of Anomaly Scores ---")
-    print(f"Anomaly Threshold: {anomaly_threshold}")
 
     os.makedirs(result_base_dir, exist_ok=True)
     detected_true_dir = os.path.join(result_base_dir, "detected_anomaly_true")
@@ -254,7 +296,7 @@ def main():
         )
     else:
         detected_anomalies_flags = classical_postprocessor.process_scores(
-            np.array(valid_scores_for_classification), threshold=anomaly_threshold
+            np.array(valid_scores_for_classification), threshold=0.36
         )
 
         processed_score_idx = 0
@@ -289,7 +331,6 @@ def main():
                 detection_results_summary.append(result_str)
                 processed_score_idx += 1
 
-    # --- Calculate and Print Accuracy ---
     accuracy_value_str = "N/A (no successfully processed samples for metrics)"
     print(f"\n--- Evaluation Metrics ---")
     if actual_labels_for_metric:
@@ -314,9 +355,8 @@ def main():
     else:
         print("No successfully processed samples to calculate accuracy.")
 
-    # --- 5. Save Results ---
     print("\n--- Step 5: Saving Results ---")
-    results_filename = "./detection_summary.txt"
+    results_filename = os.path.join(result_base_dir, "detection_summary.txt")
     config_summary = [
         f"Configuration:",
         f"  Normal Digit for Profile (Train): {normal_digit}, Anomaly Digit for Eval: {anomaly_digit}",

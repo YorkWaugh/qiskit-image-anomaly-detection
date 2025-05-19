@@ -1,6 +1,6 @@
 from torchvision import datasets
 import numpy as np
-from PIL import Image  # For resizing
+from PIL import Image
 
 
 class DataLoader:
