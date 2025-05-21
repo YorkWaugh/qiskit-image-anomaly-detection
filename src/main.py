@@ -10,10 +10,12 @@ from sklearn.metrics import (
     precision_score,
     recall_score,
     f1_score,
+    roc_curve,
 )
 from sklearn.svm import OneClassSVM
 from sklearn.preprocessing import StandardScaler
 from tqdm import tqdm
+import matplotlib.pyplot as plt
 
 # Import from local modules
 import config
@@ -162,6 +164,45 @@ if __name__ == "__main__":
     print(f"Precision: {precision:.4f}")
     print(f"Recall: {recall:.4f}")
     print(f"F1 Score: {f1:.4f}")
+
+    # Plot 1: Anomaly Score Distribution Histogram
+    plt.figure(figsize=(10, 6))
+    normal_scores = anomaly_scores[test_labels == 0]
+    anomaly_scores_data = anomaly_scores[test_labels == 1]
+    plt.hist(normal_scores, bins=50, alpha=0.7, label="Normal (Label 0)", color="blue")
+    plt.hist(
+        anomaly_scores_data, bins=50, alpha=0.7, label="Anomaly (Label 1)", color="red"
+    )
+    plt.xlabel("Anomaly Score")
+    plt.ylabel("Sample Count")
+    plt.title(f"Anomaly Score Distribution for {config.CATEGORY}")
+    plt.legend()
+    plt.grid(True)
+    histogram_path = os.path.join(
+        config.RESULTS_DIR, f"{config.CATEGORY}_anomaly_distribution.png"
+    )
+    plt.savefig(histogram_path)
+    plt.close()
+    print(f"Anomaly score distribution histogram saved to: {histogram_path}")
+
+    # Plot 2: ROC Curve
+    fpr, tpr, _ = roc_curve(test_labels, anomaly_scores)
+    plt.figure(figsize=(8, 8))
+    plt.plot(fpr, tpr, color="darkorange", lw=2, label=f"ROC curve (AUC = {auc:.2f})")
+    plt.plot([0, 1], [0, 1], color="navy", lw=2, linestyle="--")
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.05])
+    plt.xlabel("False Positive Rate (FPR)")
+    plt.ylabel("True Positive Rate (TPR)")
+    plt.title(f"Receiver Operating Characteristic (ROC) Curve for {config.CATEGORY}")
+    plt.legend(loc="lower right")
+    plt.grid(True)
+    roc_curve_path = os.path.join(
+        config.RESULTS_DIR, f"{config.CATEGORY}_roc_curve.png"
+    )
+    plt.savefig(roc_curve_path)
+    plt.close()
+    print(f"ROC curve saved to: {roc_curve_path}")
 
     training_summary = {
         "category": config.CATEGORY,

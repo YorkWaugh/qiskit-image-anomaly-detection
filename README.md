@@ -15,6 +15,7 @@ The MVTec Anomaly Detection (MVTec AD) dataset is used for training and testing 
 - **Dependencies:**
 
   ```text
+  matplotlib==3.10.3
   numpy==2.2.6
   opencv-python==4.11.0.86
   qiskit==2.0.1
